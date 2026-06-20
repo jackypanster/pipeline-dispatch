@@ -32,8 +32,7 @@ REPO="${1:?usage: dispatch.sh /path/to/target-repo}"
 TG="${DISPATCH_TG:-telegram}"
 TIMEOUT="${DISPATCH_TIMEOUT:-1800}"
 HERMES="${HERMES:-hermes}"
-SKILL="pipeline-impl"
-SLOT="goal-driven-implementation"   # the skill pipeline-impl delegates to (roles.yaml)
+SKILL="pipeline-impl"   # the skill passed to --skills; it delegates to goal-driven-implementation
 
 die() { echo "dispatch: $*" >&2; exit 1; }
 notify() { # notify <subject> <body>
@@ -49,9 +48,13 @@ top="$(git rev-parse --show-toplevel)"
 [ -f .pipeline/current.json ] || die "no .pipeline/current.json — run prd/arch/task first"
 
 # --- 2. pre-flight: restore the all-slot init gate that skipping prd would skip.
-#        For impl-only we just need the impl slot resolvable on THIS runtime.
-"$HERMES" skills list 2>/dev/null | grep -q "$SLOT" \
-  || die "impl slot '$SLOT' not installed on this Hermes runtime — install before dispatch"
+#        Check the skill we pass to --skills ("pipeline-impl") — it shows untruncated in
+#        `skills list`. We do NOT grep the delegated slot (goal-driven-implementation): the
+#        table truncates long names ("goal-driven-implementa…"), so an exact grep false-negatives.
+#        If the delegated slot is missing, `hermes chat` itself errors ("Unknown skill(s)" / a
+#        resolution STOP) and step-4's failure path catches it — one layer later, still surfaced.
+"$HERMES" skills list 2>/dev/null | grep -q "$SKILL" \
+  || die "skill '$SKILL' not installed on this Hermes runtime — install before dispatch"
 
 # --- 3. fire impl headless with a wall-clock timeout (macOS has no `timeout(1)`).
 # mktemp: BSD (macOS) `-t` takes a bare prefix; GNU (Ubuntu) `-t` wants a template.
