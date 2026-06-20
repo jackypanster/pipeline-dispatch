@@ -45,7 +45,7 @@ notify() { # notify <subject> <body>
 [ -d "$REPO/.git" ] || die "not a git repo: $REPO"
 cd "$REPO"
 top="$(git rev-parse --show-toplevel)"
-[ "$top" = "$(cd "$REPO" && pwd)" ] || die "toplevel mismatch: $top != $REPO (wrong repo guard)"
+[ "$top" = "$(pwd -P)" ] || die "toplevel mismatch: $top != $(pwd -P) (wrong repo guard)"
 [ -f .pipeline/current.json ] || die "no .pipeline/current.json — run prd/arch/task first"
 
 # --- 2. pre-flight: restore the all-slot init gate that skipping prd would skip.
@@ -86,13 +86,31 @@ if [ -z "$handoff" ]; then
   exit 2
 fi
 
-# --- 6. classify by the handoff's own status; the human verifies authoritative state at review.
-if printf '%s' "$handoff" | grep -qiE 'status=[^[:space:]]*(blocked|failed)|pipeline-hunt'; then
-  echo "dispatch: impl BLOCKED" >&2
-  notify "🔴 impl 卡住,需你介入 (pipeline-hunt)" "$handoff"
-else
-  echo "dispatch: impl DONE — PR awaiting your review" >&2
-  notify "✅ impl 完成,PR 待你 review" "$handoff"
-fi
+# --- 6. route on the handoff's authoritative next-command directive (the `Run pipeline-X.`
+#        line), NOT on free-text: the block also names hunt/blocked in standing cautions.
+#        impl has 3 next-steps (see pipeline-impl/SKILL.md): hunt = blocked (attempts>=3);
+#        impl = passed-but-more-cards OR retry (attempts<3) ⇒ re-run dispatch; review = all
+#        cards done ⇒ human reviews. We match `Run pipeline-X` at line start so the lowercase
+#        mid-line caution `⇒ run pipeline-hunt` does not trip the router.
+next_cmd="$(printf '%s\n' "$handoff" \
+  | grep -oiE '^[[:space:]]*Run +pipeline-(impl|review|hunt)' | head -1 \
+  | grep -oiE 'pipeline-(impl|review|hunt)' | tr 'A-Z' 'a-z')"
+
+status=0
+case "$next_cmd" in
+  pipeline-hunt)
+    echo "dispatch: impl BLOCKED (attempts>=3) -> pipeline-hunt" >&2
+    notify "🔴 impl 卡住 (attempts>=3),需你介入 pipeline-hunt" "$handoff" ;;
+  pipeline-impl)
+    echo "dispatch: card done/retry, MORE cards remain -> re-run dispatch" >&2
+    notify "🔁 一张卡完成或重试中,还有卡未做 — 需再跑一次 dispatch.sh" "$handoff" ;;
+  pipeline-review)
+    echo "dispatch: ALL cards done -> human review" >&2
+    notify "✅ 全部卡完成,PR 待你 review" "$handoff" ;;
+  *)
+    echo "dispatch: cannot determine next command from handoff -> escalating" >&2
+    notify "🟠 抓到 handoff 但判不出下一步,请人工看" "$handoff"; status=2 ;;
+esac
 
 printf '%s\n' "$handoff"
+exit "$status"
