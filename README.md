@@ -42,9 +42,13 @@ Env overrides:
 
 | var | default | meaning |
 |---|---|---|
-| `DISPATCH_TG` | `telegram:牛马军团` | Telegram target (or use chat id, e.g. `telegram:-1003844184820`) |
+| `DISPATCH_TG` | `telegram` | bare = the configured bot's **home channel** (here `@agent_m4_bot` → your DM). Override with `telegram:<name>` or `telegram:<chat_id>`. |
 | `DISPATCH_TIMEOUT` | `1800` | wall-clock seconds before the impl run is killed |
 | `HERMES` | `hermes` | hermes binary |
+
+Portable across **macOS and Ubuntu**: `#!/usr/bin/env bash`, bash 3.2+ (no bashisms
+beyond it), no GNU-only flags, no `timeout(1)` (macOS lacks it — a watchdog is used),
+and an `mktemp` template form both BSD and GNU accept.
 
 ## What the script guarantees (and what it deliberately does not)
 

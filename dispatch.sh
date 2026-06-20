@@ -17,15 +17,19 @@
 # Authoritative state lives in git, NEVER in this stdout. The handoff forwarded to
 # Telegram is a *copy for your eyes*; verify branch/attempts/PR with git at review.
 #
+# Portable: bash 3.2+ (macOS default) and bash on Ubuntu. No bashisms beyond 3.2,
+# no GNU-only flags, no `timeout(1)` (macOS lacks it).
+#
 # Usage:  ./dispatch.sh /path/to/target-repo
-# Env:    DISPATCH_TG       Telegram target   (default: telegram:牛马军团)
+# Env:    DISPATCH_TG       Telegram target   (default: telegram = bot home channel / your DM)
 #         DISPATCH_TIMEOUT  wall-clock secs   (default: 1800)
 #         HERMES            hermes binary     (default: hermes on PATH)
 
 set -euo pipefail
 
 REPO="${1:?usage: dispatch.sh /path/to/target-repo}"
-TG="${DISPATCH_TG:-telegram:牛马军团}"
+# bare "telegram" = the configured bot's home channel (here @agent_m4_bot → your DM).
+TG="${DISPATCH_TG:-telegram}"
 TIMEOUT="${DISPATCH_TIMEOUT:-1800}"
 HERMES="${HERMES:-hermes}"
 SKILL="pipeline-impl"
@@ -50,7 +54,9 @@ top="$(git rev-parse --show-toplevel)"
   || die "impl slot '$SLOT' not installed on this Hermes runtime — install before dispatch"
 
 # --- 3. fire impl headless with a wall-clock timeout (macOS has no `timeout(1)`).
-OUT="$(mktemp -t dispatch.out.XXXXXX)"; ERR="$(mktemp -t dispatch.err.XXXXXX)"
+# mktemp: BSD (macOS) `-t` takes a bare prefix; GNU (Ubuntu) `-t` wants a template.
+# An explicit path template ending in X's is the one form both accept identically.
+OUT="$(mktemp "${TMPDIR:-/tmp}/dispatch.out.XXXXXX")"; ERR="$(mktemp "${TMPDIR:-/tmp}/dispatch.err.XXXXXX")"
 trap 'rm -f "$OUT" "$ERR"' EXIT
 
 PROMPT='Run pipeline-impl per CONTRACT.md. First `git pull --rebase`, read .pipeline/current.json + the feature journal.md tail, pick the OLDEST todo card, make its frozen red test green (you may add white-box tests in impl-paths, but DO NOT touch spec-paths), open a PR, set status=review, and print the `>>> NEXT … <<< END` handoff block verbatim as your final output.'
