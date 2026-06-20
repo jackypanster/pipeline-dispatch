@@ -64,9 +64,11 @@ Hardenings, each tracing to a real failure mode:
   under `set -m` (its own process group) and the watchdog sends a negative-PID group
   `kill`, reaping hermes *and* the git/cargo/npm children it spawned — so a timed-out
   impl cannot keep mutating the repo behind your back. Verified on macOS and Ubuntu.
-- **Handoff by anchors only** — `-Q` stdout carries a banner line before the answer and
-  the model may wrap the block in ```` ``` ````; extraction uses the `>>> NEXT` / `<<< END`
-  anchors and strips fences. `session_id` is on **stderr** and never read.
+- **Routing from the journal, not stdout** — the impl shim commits its handoff to
+  `.pipeline/<feature>/journal.md` (git is the bus); the headless `-Q` stdout final message is
+  unreliable (the model may summarize instead of printing the block verbatim). After the run,
+  dispatch `git pull`s and routes on the **last `>>> NEXT … <<< END` block in the journal tail**.
+  stdout is kept only for failure diagnostics.
 - **Exit code is coarse** — a skill `STOP` or a `blocked` card still exits `0`; success
   is decided by parsing the handoff `status`, not the exit code.
 - **No guessing** — if the handoff block is absent, the script escalates to Telegram with

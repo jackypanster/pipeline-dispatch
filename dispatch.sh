@@ -94,12 +94,23 @@ if [ "$rc" -ge 124 ] || { [ "$rc" -gt 0 ] && ! grep -q '>>> NEXT' "$OUT"; }; the
   exit 1
 fi
 
-# --- 5. extract the handoff block by ANCHORS only (stdout has banner noise before it;
-#        session_id is on stderr). Strip any markdown code fences the model may wrap it in.
-handoff="$(sed -n '/>>> NEXT/,/<<< END/p' "$OUT" | sed '/^```/d')"
+# --- 5. read the AUTHORITATIVE handoff from the JOURNAL TAIL (git), NOT stdout. The impl shim
+#        commits its handoff to .pipeline/<feature>/journal.md; the headless -Q stdout final
+#        message is unreliable (the model may summarize instead of printing the block verbatim).
+#        git is the bus — trust it. Pull first to get what the (possibly remote) impl pushed.
+git pull --rebase >/dev/null 2>&1 || true
+feature="$(sed -n 's/.*"feature"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .pipeline/current.json | head -n1)"
+journal=".pipeline/$feature/journal.md"
+handoff=""
+[ -n "$feature" ] && [ -f "$journal" ] && handoff="$(awk '
+  /^>>> NEXT/ { inblk=1; blk="" }
+  inblk       { blk = blk $0 "\n" }
+  /^<<< END/  { inblk=0; last=blk }
+  END         { printf "%s", last }
+' "$journal")"
 if [ -z "$handoff" ]; then
-  echo "dispatch: no handoff block found — not guessing, escalating" >&2
-  notify "🟠 impl 跑完但抓不到 handoff 块,请人工看" "$(tail -n 40 "$OUT")"
+  echo "dispatch: no handoff in journal tail ($journal) — escalating" >&2
+  notify "🟠 impl 跑完但 journal 里没有 handoff,请人工看" "$(tail -n 40 "$OUT" 2>/dev/null)"
   exit 2
 fi
 
