@@ -53,8 +53,14 @@ top="$(git rev-parse --show-toplevel)"
 #        table truncates long names ("goal-driven-implementa…"), so an exact grep false-negatives.
 #        If the delegated slot is missing, `hermes chat` itself errors ("Unknown skill(s)" / a
 #        resolution STOP) and step-4's failure path catches it — one layer later, still surfaced.
-"$HERMES" skills list 2>/dev/null | grep -q "$SKILL" \
-  || die "skill '$SKILL' not installed on this Hermes runtime — install before dispatch"
+# Capture-then-match, NOT `… | grep -q`: under `set -o pipefail`, grep -q exits on the first
+# match and closes the pipe, so the long `skills list` producer dies with SIGPIPE and poisons
+# the pipe status — a false "not installed". A glob match on the captured string has no pipe.
+skills_out="$("$HERMES" skills list 2>/dev/null || true)"
+case "$skills_out" in
+  *"$SKILL"*) : ;;
+  *) die "skill '$SKILL' not installed on this Hermes runtime — install before dispatch" ;;
+esac
 
 # --- 3. fire impl headless with a wall-clock timeout (macOS has no `timeout(1)`).
 # mktemp: BSD (macOS) `-t` takes a bare prefix; GNU (Ubuntu) `-t` wants a template.
@@ -103,9 +109,11 @@ fi
 #        impl = passed-but-more-cards OR retry (attempts<3) ⇒ re-run dispatch; review = all
 #        cards done ⇒ human reviews. We match `Run pipeline-X` at line start so the lowercase
 #        mid-line caution `⇒ run pipeline-hunt` does not trip the router.
-next_cmd="$(printf '%s\n' "$handoff" \
-  | grep -oiE '^[[:space:]]*Run +pipeline-(impl|review|hunt)' | head -1 \
-  | grep -oiE 'pipeline-(impl|review|hunt)' | tr 'A-Z' 'a-z')"
+# Capture all `Run pipeline-X` directive tokens (|| true swallows no-match / SIGPIPE under
+# pipefail); take the first line via parameter expansion (no `head` pipe, which would early-close
+# and poison the status); lowercase it. Empty ⇒ falls to the *) escalation case.
+runs="$(printf '%s\n' "$handoff" | grep -oiE '^[[:space:]]*Run +pipeline-(impl|review|hunt)' | grep -oiE 'pipeline-(impl|review|hunt)' || true)"
+next_cmd="$(printf '%s' "${runs%%$'\n'*}" | tr 'A-Z' 'a-z')"
 
 status=0
 case "$next_cmd" in
