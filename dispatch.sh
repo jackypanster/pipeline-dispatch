@@ -61,13 +61,21 @@ trap 'rm -f "$OUT" "$ERR"' EXIT
 
 PROMPT='Run pipeline-impl per CONTRACT.md. First `git pull --rebase`, read .pipeline/current.json + the feature journal.md tail, pick the OLDEST todo card, make its frozen red test green (you may add white-box tests in impl-paths, but DO NOT touch spec-paths), open a PR, set status=review, and print the `>>> NEXT … <<< END` handoff block verbatim as your final output.'
 
+# `set -m` makes each background job its own process-group leader (PGID == its PID), so a
+# timeout can kill the whole TREE — hermes plus the git/cargo/npm children it spawns — via
+# a negative-PID group signal. Without it, `kill $pid` leaves orphaned children still
+# mutating the repo after we report failure, breaking the serial-single-writer rule.
+# Verified to reap the child tree on macOS (bash 3.2) and Ubuntu.
 echo "dispatch: firing $SKILL on $REPO (timeout ${TIMEOUT}s) …" >&2
+set -m
 "$HERMES" chat -q "$PROMPT" -Q --skills "$SKILL" --yolo >"$OUT" 2>"$ERR" &
 pid=$!
-( sleep "$TIMEOUT"; kill -TERM "$pid" 2>/dev/null ) &
+( sleep "$TIMEOUT"; kill -TERM -"$pid" 2>/dev/null ) &   # negative PID = whole process group
 watcher=$!
 rc=0; wait "$pid" || rc=$?
-kill -TERM "$watcher" 2>/dev/null || true; wait "$watcher" 2>/dev/null || true
+kill -TERM -"$watcher" 2>/dev/null || true; wait "$watcher" 2>/dev/null || true
+kill -TERM -"$pid"     2>/dev/null || true   # belt-and-braces: reap any straggler in the group
+set +m
 
 # --- 4. exit code is a COARSE filter only (skill STOP / blocked are normal EXIT=0).
 if [ "$rc" -ge 124 ] || { [ "$rc" -gt 0 ] && ! grep -q '>>> NEXT' "$OUT"; }; then

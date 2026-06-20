@@ -60,8 +60,10 @@ Hardenings, each tracing to a real failure mode:
 - **Slot pre-flight** — skipping `prd` skips the contract's only front-of-pipeline
   "all slots resolve" gate, so the script re-checks that `goal-driven-implementation`
   is installed on this runtime before firing.
-- **Wall-clock timeout** — macOS has no `timeout(1)`; the script backgrounds the run
-  with a watchdog `kill`.
+- **Wall-clock timeout, whole tree** — macOS has no `timeout(1)`; the script runs the job
+  under `set -m` (its own process group) and the watchdog sends a negative-PID group
+  `kill`, reaping hermes *and* the git/cargo/npm children it spawned — so a timed-out
+  impl cannot keep mutating the repo behind your back. Verified on macOS and Ubuntu.
 - **Handoff by anchors only** — `-Q` stdout carries a banner line before the answer and
   the model may wrap the block in ```` ``` ````; extraction uses the `>>> NEXT` / `<<< END`
   anchors and strips fences. `session_id` is on **stderr** and never read.
